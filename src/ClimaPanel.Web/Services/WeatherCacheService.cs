@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using ClimaPanel.Web.Common;
 using ClimaPanel.Web.Models;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -5,10 +7,12 @@ namespace ClimaPanel.Web.Services;
 
 public sealed class WeatherCacheService
 {
-    private const string CacheKey = "forecast";
     private readonly IMemoryCache _cache;
     private readonly IWeatherClient _weatherClient;
     private readonly IConfiguration _configuration;
+
+    // controla solicitudes simultaneas por ciudad
+    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _locks = new();
 
     public WeatherCacheService(
         IMemoryCache cache,
@@ -25,30 +29,87 @@ public sealed class WeatherCacheService
         bool forceRefresh,
         CancellationToken cancellationToken)
     {
+        // cache independiente por ciudad
+        var cacheKey = $"forecast-{city.Id}";
+
+        //respaldo para usar si falla el proveedor
+        var staleKey = $"forecast-stale-{city.Id}";
+
         if (!forceRefresh &&
-            _cache.TryGetValue(CacheKey, out WeatherCard? cached) &&
+            _cache.TryGetValue(cacheKey, out WeatherCard? cached) &&
             cached is not null)
         {
             return cached with { Source = "CACHE" };
         }
 
-        var reading = await _weatherClient.GetForecastAsync(
-            city.Latitude,
-            city.Longitude,
-            city.Timezone,
-            CancellationToken.None);
+        // evita llamadas duplicadas para la misma ciudad
+        var cityLock = _locks.GetOrAdd(
+            city.Id,
+            _ => new SemaphoreSlim(1, 1));
 
-        var response = new WeatherCard(
-            "LIVE",
-            reading.FetchedAtUtc,
-            reading.TemperatureC,
-            reading.HumidityPercent,
-            reading.PrecipitationMm,
-            reading.WindSpeedKmh,
-            reading.Daily);
+        await cityLock.WaitAsync(cancellationToken);
 
-        var cacheSeconds = _configuration.GetValue("OpenMeteo:CacheSeconds", 90);
-        _cache.Set(CacheKey, response, TimeSpan.FromSeconds(cacheSeconds));
-        return response;
+        try
+        {
+            // revisa nuevamente el cache despues de esperar
+            if (!forceRefresh &&
+                _cache.TryGetValue(cacheKey, out cached) &&
+                cached is not null)
+            {
+                return cached with { Source = "CACHE" };
+            }
+
+            try
+            {
+                var reading = await _weatherClient.GetForecastAsync(
+                    city.Latitude,
+                    city.Longitude,
+                    city.Timezone,
+                    cancellationToken);
+
+                var response = new WeatherCard(
+                    "LIVE",
+                    reading.FetchedAtUtc,
+                    reading.TemperatureC,
+                    reading.HumidityPercent,
+                    reading.PrecipitationMm,
+                    reading.WindSpeedKmh,
+                    reading.Daily);
+
+                var cacheSeconds = _configuration.GetValue(
+                    "OpenMeteo:CacheSeconds",
+                    90);
+
+                _cache.Set(
+                    cacheKey,
+                    response,
+                    TimeSpan.FromSeconds(cacheSeconds));
+
+                // mantiene el ultimo dato como respaldo
+                _cache.Set(
+                    staleKey,
+                    response,
+                    TimeSpan.FromMinutes(15));
+
+                return response;
+            }
+            catch (UserMessageException)
+            {
+                // si falla el proveedor usa el ultimo dato disponible
+                if (_cache.TryGetValue(
+                    staleKey,
+                    out WeatherCard? stale) &&
+                    stale is not null)
+                {
+                    return stale with { Source = "STALE" };
+                }
+
+                throw;
+            }
+        }
+        finally
+        {
+            cityLock.Release();
+        }
     }
 }
