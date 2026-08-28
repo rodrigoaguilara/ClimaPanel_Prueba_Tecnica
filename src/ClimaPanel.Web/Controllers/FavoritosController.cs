@@ -9,10 +9,17 @@ public sealed class FavoritosController : Controller
 {
     private readonly FavoriteService _service;
     private readonly ICurrentUser _currentUser;
+    //se agrega para la nueva funcionalidad
+    private readonly WeatherAlertService _alertService;
 
-    public FavoritosController(FavoriteService service, ICurrentUser currentUser)
+    //se cambia el constructor para la nueva funcionalidad
+    public FavoritosController(
+        FavoriteService service,
+        WeatherAlertService alertService,
+        ICurrentUser currentUser)
     {
         _service = service;
+        _alertService = alertService;
         _currentUser = currentUser;
     }
 
@@ -59,18 +66,45 @@ public sealed class FavoritosController : Controller
         }
     }
 
+    //se cambia detalle para la nueva funcionalidad
     [HttpGet]
     public async Task<IActionResult> Detalle(
         Guid id,
         CancellationToken cancellationToken)
     {
         var user = _currentUser.GetCurrent();
-        var city = await _service.GetAsync(user.Id, id, cancellationToken);
-        var weather = await _service.GetWeatherAsync(user.Id, id, cancellationToken);
+
+        var city = await _service.GetAsync(
+            user.Id,
+            id,
+            cancellationToken);
+
+        var weather = await _service.GetWeatherAsync(
+            user.Id,
+            id,
+            cancellationToken);
+
+        // evalua las alertas con el clima obtenido
+        await _alertService.EvaluateAsync(
+            user.Id,
+            id,
+            weather,
+            cancellationToken);
+
+        var alerts = await _alertService.ListAsync(
+            user.Id,
+            id,
+            cancellationToken);
+
         return View(new FavoriteDetailsViewModel
         {
             City = city,
-            Weather = weather
+            Weather = weather,
+            Alerts = alerts,
+            NewAlert = new CreateWeatherAlertInput
+            {
+                FavoriteId = id
+            }
         });
     }
 
@@ -118,5 +152,93 @@ public sealed class FavoritosController : Controller
         }
 
         return RedirectToAction(nameof(Index));
+    }
+
+    // crea una nueva alerta
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CrearAlerta(
+        CreateWeatherAlertInput input,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var user = _currentUser.GetCurrent();
+
+            await _alertService.CreateAsync(
+                user.Id,
+                input,
+                cancellationToken);
+
+            TempData["Success"] = "La alerta fue creada.";
+        }
+        catch (UserMessageException exception)
+        {
+            TempData["Error"] = exception.Message;
+        }
+
+        return RedirectToAction(
+            nameof(Detalle),
+            new { id = input.FavoriteId });
+    }
+
+    // activa o desactiva una alerta
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CambiarEstadoAlerta(
+        Guid favoriteId,
+        Guid alertId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var user = _currentUser.GetCurrent();
+
+            await _alertService.ToggleAsync(
+                user.Id,
+                favoriteId,
+                alertId,
+                cancellationToken);
+
+            TempData["Success"] = "La alerta fue actualizada.";
+        }
+        catch (UserMessageException exception)
+        {
+            TempData["Error"] = exception.Message;
+        }
+
+        return RedirectToAction(
+            nameof(Detalle),
+            new { id = favoriteId });
+    }
+
+    // elimina una alerta
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> EliminarAlerta(
+        Guid favoriteId,
+        Guid alertId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var user = _currentUser.GetCurrent();
+
+            await _alertService.DeleteAsync(
+                user.Id,
+                favoriteId,
+                alertId,
+                cancellationToken);
+
+            TempData["Success"] = "La alerta fue eliminada.";
+        }
+        catch (UserMessageException exception)
+        {
+            TempData["Error"] = exception.Message;
+        }
+
+        return RedirectToAction(
+            nameof(Detalle),
+            new { id = favoriteId });
     }
 }
