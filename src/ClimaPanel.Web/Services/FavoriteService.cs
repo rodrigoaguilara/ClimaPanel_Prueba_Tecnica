@@ -63,6 +63,7 @@ public sealed class FavoriteService
         return entity;
     }
 
+    // se agrega paginacion desde la base de datos
     public async Task<FavoriteListViewModel> ListAsync(
         string userId,
         string? search,
@@ -73,35 +74,47 @@ public sealed class FavoriteService
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 50);
 
-        var allRows = await _db.FavoriteCities
+        // filtra primero por usuario
+        var query = _db.FavoriteCities
             .AsNoTracking()
-            .ToListAsync(cancellationToken);
-
-        IEnumerable<FavoriteCity> query = allRows.Where(x => x.UserId == userId);
+            .Where(x => x.UserId == userId);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
+            search = search.Trim();
+
             query = query.Where(x =>
-                x.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
-                x.Country.Contains(search, StringComparison.OrdinalIgnoreCase));
+                EF.Functions.Like(x.Name, $"%{search}%") ||
+                EF.Functions.Like(x.Country, $"%{search}%"));
         }
 
-        query = query.OrderBy(x => x.Name);
-        var total = query.Count();
-        var items = query
+        // cuenta los resultados antes de paginar
+        var total = await query.CountAsync(cancellationToken);
+
+        // ordena y trae solo la pagina solicitada
+        var items = await query
+            .OrderBy(x => x.Name)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(ToListItem)
-            .ToArray();
+            .Select(x => new FavoriteListItem(
+                x.Id,
+                x.Name,
+                x.Country,
+                x.CountryCode,
+                x.Timezone,
+                x.CreatedAtUtc))
+            .ToArrayAsync(cancellationToken);
 
         return new FavoriteListViewModel
         {
             Items = items,
-            Search = search?.Trim() ?? string.Empty,
+            Search = search ?? string.Empty,
             Page = page,
             PageSize = pageSize,
             Total = total,
-            TotalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize))
+            TotalPages = Math.Max(
+                1,
+                (int)Math.Ceiling(total / (double)pageSize))
         };
     }
 
