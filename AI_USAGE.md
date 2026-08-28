@@ -1,20 +1,34 @@
 # Declaración de uso de inteligencia artificial
 
-Complete este archivo antes de entregar.
-
 ## Herramientas utilizadas
 
-Indique nombre y versión, cuando corresponda. Si no utilizó herramientas de IA,
-indíquelo expresamente.
+Se utilizó ChatGPT de OpenAI como herramienta de apoyo durante el desarrollo
+de la prueba técnica.
 
 ## Tareas para las que se utilizaron
 
-Describa consultas, generación, explicación, revisión, pruebas o depuración.
+Se utilizó principalmente para:
+
+- Revisar el código existente y analizar los requerimientos de la prueba.
+- Apoyar la implementación del cliente HTTP asincrónico y su configuración
+  mediante inyección de dependencias.
+- Revisar alternativas para controlar concurrencia, caché y duplicidad de favoritos.
+- Apoyar el diseño e implementación de las alertas meteorológicas por umbral.
+- Revisar manejo de errores, seguridad por usuario y validaciones.
+- Analizar errores encontrados durante las pruebas manuales.
+- Apoyar la documentación final de las decisiones técnicas.
 
 ## Revisión personal
 
-Explique qué partes verificó, qué pruebas ejecutó y qué sugerencias descartó o
-corrigió.
+Todo cambio sugerido fue revisado antes de incorporarlo al proyecto.
+
+Durante el desarrollo ejecuté repetidamente dotnet build y dotnet test.
+También realicé pruebas manuales desde la interfaz, incluyendo creación,
+evaluación, activación, desactivación y eliminación de alertas, además de la
+actualización manual del clima.
+
+Las sugerencias se adaptaron a la estructura existente del proyecto y se
+corrigieron problemas detectados durante las pruebas manuales.
 
 ## Declaración
 

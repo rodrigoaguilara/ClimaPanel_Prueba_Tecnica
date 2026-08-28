@@ -56,3 +56,16 @@ Linux/macOS:
 ```bash
 ./scripts/reset-db.sh
 ```
+
+## Funcionalidades implementadas
+
+- Integración asincrónica con Open-Meteo mediante HttpClient e inyección de dependencias.
+- Control de timeout, cancelación y errores del proveedor externo.
+- Separación de favoritos por usuario.
+- Prevención de ciudades duplicadas por usuario mediante restricción en SQLite.
+- Caché independiente por ciudad con estados LIVE, CACHE y STALE.
+- Actualización manual del clima.
+- Paginación realizada desde la consulta a SQLite.
+- Alertas meteorológicas persistentes por temperatura, humedad, precipitación y viento.
+- Creación, evaluación, activación, desactivación y eliminación de alertas.
+- Máximo de cinco alertas activas por ciudad.
