@@ -1,5 +1,9 @@
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
+
+// se incorporan using
+using System.Text.Json;
+using ClimaPanel.Web.Common;
 using ClimaPanel.Web.Models;
 
 namespace ClimaPanel.Web.Services;
@@ -10,15 +14,21 @@ public sealed class OpenMeteoClient : IWeatherClient
     private readonly HttpClient _httpClient;
     private readonly IConfiguration _configuration;
 
+    // se agrega logger
+    private readonly ILogger<OpenMeteoClient> _logger;
+
+    // se agrega log para controlar errores del servicio
     public OpenMeteoClient(
         HttpClient httpClient,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ILogger<OpenMeteoClient> logger)
     {
         _httpClient = httpClient;
         _configuration = configuration;
+        _logger = logger;
     }
 
-    //se cambia a llamada asincronica
+    // se cambia a llamada asincronica
     public async Task<IReadOnlyList<LocationOption>> SearchAsync(
         string query,
         CancellationToken cancellationToken)
@@ -30,33 +40,59 @@ public sealed class OpenMeteoClient : IWeatherClient
             + "/v1/search?name=" + Uri.EscapeDataString(query)
             + "&count=8&language=es&format=json";
 
-        using var response = await _httpClient.GetAsync(
-            url,
-            cancellationToken);
+        // se agrega el manejo de errores del servicio
+        try
+        {
+            using var response = await _httpClient.GetAsync(
+                url,
+                cancellationToken);
 
-        response.EnsureSuccessStatusCode();
+            response.EnsureSuccessStatusCode();
 
-        var payload = await response.Content
-            .ReadFromJsonAsync<GeocodingResponse>(
-                cancellationToken: cancellationToken);
+            var payload = await response.Content
+                .ReadFromJsonAsync<GeocodingResponse>(
+                    cancellationToken: cancellationToken);
 
-        IReadOnlyList<LocationOption> results = payload?.Results?
-            .Select(x => new LocationOption(
-                x.Id,
-                x.Name ?? "Sin nombre",
-                x.Country ?? "Sin país",
-                x.CountryCode ?? "--",
-                x.Admin1,
-                x.Latitude,
-                x.Longitude,
-                x.Timezone ?? "auto"))
-            .ToArray()
-            ?? [];
+            IReadOnlyList<LocationOption> results = payload?.Results?
+                .Select(x => new LocationOption(
+                    x.Id,
+                    x.Name ?? "Sin nombre",
+                    x.Country ?? "Sin país",
+                    x.CountryCode ?? "--",
+                    x.Admin1,
+                    x.Latitude,
+                    x.Longitude,
+                    x.Timezone ?? "auto"))
+                .ToArray()
+                ?? [];
 
-        return results;
+            return results;
+        }
+        catch (OperationCanceledException ex)
+            when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "Timeout consultando Open-Meteo.");
+
+            throw new UserMessageException(
+                "El servicio del clima tardó demasiado en responder.");
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "Error HTTP consultando Open-Meteo.");
+
+            throw new UserMessageException(
+                "No fue posible consultar el servicio del clima.");
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Respuesta inválida de Open-Meteo.");
+
+            throw new UserMessageException(
+                "El servicio del clima entregó una respuesta inválida.");
+        }
     }
 
-    //se cambia a llamada asincronica
+    // se cambia a llamada asincronica
     public async Task<WeatherReading> GetForecastAsync(
         double latitude,
         double longitude,
@@ -75,51 +111,77 @@ public sealed class OpenMeteoClient : IWeatherClient
             + "&forecast_days=5"
             + "&timezone=" + Uri.EscapeDataString(timezone);
 
-        using var response = await _httpClient.GetAsync(
-            url,
-            cancellationToken);
-
-        response.EnsureSuccessStatusCode();
-
-        var payload = await response.Content
-            .ReadFromJsonAsync<ForecastResponse>(
-                cancellationToken: cancellationToken)
-            ?? throw new InvalidOperationException(
-                "El proveedor no entregó información meteorológica.");
-
-        var current = payload.Current
-            ?? throw new InvalidOperationException(
-                "La respuesta no contiene condiciones actuales.");
-
-        var daily = new List<DailyWeather>();
-
-        if (payload.Daily is not null)
+        // se agrega el manejo de errores del servicio
+        try
         {
-            var count = new[]
-            {
-                payload.Daily.Time.Count,
-                payload.Daily.Minimum.Count,
-                payload.Daily.Maximum.Count,
-                payload.Daily.Precipitation.Count
-            }.Min();
+            using var response = await _httpClient.GetAsync(
+                url,
+                cancellationToken);
 
-            for (var index = 0; index < count; index++)
+            response.EnsureSuccessStatusCode();
+
+            var payload = await response.Content
+                .ReadFromJsonAsync<ForecastResponse>(
+                    cancellationToken: cancellationToken)
+                ?? throw new JsonException(
+                    "El proveedor no entregó información meteorológica.");
+
+            var current = payload.Current
+                ?? throw new JsonException(
+                    "La respuesta no contiene condiciones actuales.");
+
+            var daily = new List<DailyWeather>();
+
+            if (payload.Daily is not null)
             {
-                daily.Add(new DailyWeather(
-                    payload.Daily.Time[index],
-                    payload.Daily.Minimum[index] ?? 0,
-                    payload.Daily.Maximum[index] ?? 0,
-                    payload.Daily.Precipitation[index] ?? 0));
+                var count = new[]
+                {
+                    payload.Daily.Time.Count,
+                    payload.Daily.Minimum.Count,
+                    payload.Daily.Maximum.Count,
+                    payload.Daily.Precipitation.Count
+                }.Min();
+
+                for (var index = 0; index < count; index++)
+                {
+                    daily.Add(new DailyWeather(
+                        payload.Daily.Time[index],
+                        payload.Daily.Minimum[index] ?? 0,
+                        payload.Daily.Maximum[index] ?? 0,
+                        payload.Daily.Precipitation[index] ?? 0));
+                }
             }
-        }
 
-        return new WeatherReading(
-            DateTime.UtcNow,
-            current.Temperature ?? 0,
-            current.Humidity ?? 0,
-            current.Precipitation ?? 0,
-            current.WindSpeed ?? 0,
-            daily);
+            return new WeatherReading(
+                DateTime.UtcNow,
+                current.Temperature ?? 0,
+                current.Humidity ?? 0,
+                current.Precipitation ?? 0,
+                current.WindSpeed ?? 0,
+                daily);
+        }
+        catch (OperationCanceledException ex)
+            when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "Timeout consultando Open-Meteo.");
+
+            throw new UserMessageException(
+                "El servicio del clima tardó demasiado en responder.");
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "Error HTTP consultando Open-Meteo.");
+
+            throw new UserMessageException(
+                "No fue posible consultar el servicio del clima.");
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Respuesta inválida de Open-Meteo.");
+
+            throw new UserMessageException(
+                "El servicio del clima entregó una respuesta inválida.");
+        }
     }
 
     private sealed class GeocodingResponse
