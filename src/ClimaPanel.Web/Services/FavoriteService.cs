@@ -167,12 +167,23 @@ public sealed class FavoriteService
         return await _weatherCache.GetAsync(city, false, cancellationToken);
     }
 
-    public Task<WeatherCard> RefreshAsync(
+    // actualiza el clima consultando nuevamente al proveedor y refresa solo al usuario identificado
+    public async Task<WeatherCard> RefreshAsync(
         string userId,
         Guid id,
         CancellationToken cancellationToken)
     {
-        throw new NotImplementedException("La actualización manual todavía no está implementada.");
+        var city = await _db.FavoriteCities
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.Id == id && x.UserId == userId,
+                cancellationToken)
+            ?? throw NotFound();
+
+        return await _weatherCache.GetAsync(
+            city,
+            true,
+            cancellationToken);
     }
 
     private static FavoriteListItem ToListItem(FavoriteCity entity) => new(

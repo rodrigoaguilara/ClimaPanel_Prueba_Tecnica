@@ -80,9 +80,23 @@ public sealed class FavoritosController : Controller
         Guid id,
         CancellationToken cancellationToken)
     {
-        var user = _currentUser.GetCurrent();
-        await _service.RefreshAsync(user.Id, id, cancellationToken);
-        TempData["Success"] = "El pronóstico fue actualizado.";
+        // se agrega manejo de errores en la actualizacion manual
+        try
+        {
+            var user = _currentUser.GetCurrent();
+
+            await _service.RefreshAsync(
+                user.Id,
+                id,
+                cancellationToken);
+
+            TempData["Success"] = "El pronóstico fue actualizado.";
+        }
+        catch (UserMessageException exception)
+        {
+            TempData["Error"] = exception.Message;
+        }
+
         return RedirectToAction(nameof(Detalle), new { id });
     }
 
