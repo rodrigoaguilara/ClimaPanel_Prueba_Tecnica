@@ -23,7 +23,10 @@ public sealed class AppDbContext : DbContext
             entity.Property(x => x.CountryCode).HasMaxLength(2).IsRequired();
             entity.Property(x => x.Timezone).HasMaxLength(100).IsRequired();
             entity.HasIndex(x => x.UserId);
-            entity.HasIndex(x => new { x.UserId, x.LocationId });
+            //se modifica la restirccion para garantizar la integridad
+            //entity.HasIndex(x => new { x.UserId, x.LocationId });
+            entity.HasIndex(x => new { x.UserId, x.LocationId })
+                .IsUnique();
         });
     }
 }

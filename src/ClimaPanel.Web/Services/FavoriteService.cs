@@ -45,7 +45,21 @@ public sealed class FavoriteService
         };
 
         _db.FavoriteCities.Add(entity);
-        await _db.SaveChangesAsync(cancellationToken);
+
+        //se agrega el manejo errores duplicado de concurrencia
+        //await _db.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (
+            ex.InnerException?.Message.Contains("UNIQUE constraint failed") == true)
+        {
+            throw new UserMessageException(
+                "La ciudad ya se encuentra en sus favoritos.");
+        }
+
         return entity;
     }
 
