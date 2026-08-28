@@ -98,7 +98,11 @@ public sealed class FavoriteService
     {
         return await _db.FavoriteCities
             .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+            //se modifica la busqueda riegosa
+            //.FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+            .FirstOrDefaultAsync(
+                x => x.Id == id && x.UserId == userId,
+                cancellationToken)
             ?? throw NotFound();
     }
 
@@ -108,7 +112,11 @@ public sealed class FavoriteService
         CancellationToken cancellationToken)
     {
         var entity = await _db.FavoriteCities
-            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+            //se modifica busqueda riesgosa
+            //.FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+            .FirstOrDefaultAsync(
+                x => x.Id == id && x.UserId == userId,
+                cancellationToken)
             ?? throw NotFound();
 
         _db.FavoriteCities.Remove(entity);
@@ -122,7 +130,11 @@ public sealed class FavoriteService
     {
         var city = await _db.FavoriteCities
             .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+            //se modifica busqueda riesgosa
+            //.FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+            .FirstOrDefaultAsync(
+                x => x.Id == id && x.UserId == userId,
+                cancellationToken)
             ?? throw NotFound();
 
         return await _weatherCache.GetAsync(city, false, cancellationToken);
